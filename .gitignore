@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.mcp.json
+skills-lock.json
+.claude
+.agents
+/mock
+/reference

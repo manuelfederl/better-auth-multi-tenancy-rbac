@@ -1,0 +1,40 @@
+{
+  "name": "better-auth-multi-tenancy-rbac",
+  "version": "0.1.0",
+  "description": "RBAC plugin for Better Auth multi-tenancy",
+  "license": "MIT",
+  "author": "Manuel Federl",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "better-auth": "^1.0.0"
+  },
+  "devDependencies": {
+    "better-auth": "^1.2.7",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3"
+  }
+}
