@@ -1,6 +1,11 @@
 import type { BetterAuthPlugin } from 'better-auth'
 
-import { rbacSchema } from './schemas/index'
+import {
+  permissionSchema,
+  tenantRoleSchema,
+  tenantRolePermissionSchema,
+  tenantMemberRoleSchema,
+} from './schemas/index'
 import type { RbacOptions } from './types/index'
 
 import {
@@ -50,6 +55,10 @@ import {
  *   plugins: [
  *     multiTenancy(),
  *     rbac({
+ *       schema: {
+ *         permission: { modelName: "rbac_permission" },
+ *         tenantRole: { modelName: "rbac_tenant_role" },
+ *       },
  *       onPermissionCreated: async (permission) => {
  *         console.log(`Permission "${permission.name}" created`);
  *       },
@@ -65,9 +74,30 @@ import {
  * ```
  */
 export const rbac = (options: RbacOptions = {}) => {
+  const s = options.schema
+
+  const schema = {
+    permission: {
+      ...(s?.permission?.modelName !== undefined && { modelName: s.permission.modelName }),
+      fields: permissionSchema.fields,
+    },
+    tenantRole: {
+      ...(s?.tenantRole?.modelName !== undefined && { modelName: s.tenantRole.modelName }),
+      fields: tenantRoleSchema.fields,
+    },
+    tenantRolePermission: {
+      ...(s?.tenantRolePermission?.modelName !== undefined && { modelName: s.tenantRolePermission.modelName }),
+      fields: tenantRolePermissionSchema.fields,
+    },
+    tenantMemberRole: {
+      ...(s?.tenantMemberRole?.modelName !== undefined && { modelName: s.tenantMemberRole.modelName }),
+      fields: tenantMemberRoleSchema.fields,
+    },
+  }
+
   return {
     id: 'rbac',
-    schema: rbacSchema,
+    schema,
     endpoints: {
       // Global permissions
       createPermission: createPermission(options),
@@ -78,14 +108,14 @@ export const rbac = (options: RbacOptions = {}) => {
 
       // Tenant roles
       createTenantRole: createTenantRole(options),
-      listTenantRoles: listTenantRoles(),
-      getTenantRole: getTenantRole(),
+      listTenantRoles: listTenantRoles(options),
+      getTenantRole: getTenantRole(options),
       updateTenantRole: updateTenantRole(options),
       deleteTenantRole: deleteTenantRole(options),
 
       // Member role assignments
       assignRole: assignRole(options),
-      listMemberRoles: listMemberRoles(),
+      listMemberRoles: listMemberRoles(options),
       removeRole: removeRole(options),
 
       // Client-side permission checks

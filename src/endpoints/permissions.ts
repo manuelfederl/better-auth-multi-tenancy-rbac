@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { Permission } from '../types/permission'
 import type { RbacOptions } from '../types/options'
 import type { TenantRolePermission } from '../types/tenant-role-permission'
+import { requireGlobalPermission } from '../utils/permissions'
 
 /**
  * `POST /rbac/permissions`
@@ -31,6 +32,13 @@ export const createPermission = (options: RbacOptions) =>
       }),
     },
     async (ctx) => {
+      const { user } = ctx.context.session
+      const createRef = options.authorization?.permissions?.create
+      if (!createRef) {
+        throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
+      }
+      await requireGlobalPermission(ctx, user.id, createRef)
+
       const { name, resource, action, description } = ctx.body
 
       const existingByName = await ctx.context.adapter.findOne<Permission>({
@@ -90,7 +98,6 @@ export const listPermissions = () =>
     async (ctx) => {
       const permissions = await ctx.context.adapter.findMany<Permission>({
         model: 'permission',
-        where: [],
       })
 
       return ctx.json({ permissions })
@@ -153,6 +160,13 @@ export const updatePermission = (options: RbacOptions) =>
       }),
     },
     async (ctx) => {
+      const { user } = ctx.context.session
+      const updateRef = options.authorization?.permissions?.update
+      if (!updateRef) {
+        throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
+      }
+      await requireGlobalPermission(ctx, user.id, updateRef)
+
       const { permissionId } = ctx.params
       const { name, resource, action, description } = ctx.body
 
@@ -236,6 +250,13 @@ export const deletePermission = (options: RbacOptions) =>
       use: [sessionMiddleware],
     },
     async (ctx) => {
+      const { user } = ctx.context.session
+      const deleteRef = options.authorization?.permissions?.delete
+      if (!deleteRef) {
+        throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
+      }
+      await requireGlobalPermission(ctx, user.id, deleteRef)
+
       const { permissionId } = ctx.params
 
       const permission = await ctx.context.adapter.findOne<Permission>({

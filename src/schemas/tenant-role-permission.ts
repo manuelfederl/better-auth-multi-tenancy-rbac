@@ -1,25 +1,25 @@
 export const tenantRolePermissionSchema = {
   fields: {
     tenantRoleId: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
       references: {
         model: 'tenantRole',
         field: 'id',
-        onDelete: 'cascade' as const,
+        onDelete: 'cascade',
       },
     },
     permissionId: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
       references: {
         model: 'permission',
         field: 'id',
-        onDelete: 'cascade' as const,
+        onDelete: 'cascade',
       },
     },
     createdAt: {
-      type: 'date' as const,
+      type: 'date',
       required: true,
     },
   },

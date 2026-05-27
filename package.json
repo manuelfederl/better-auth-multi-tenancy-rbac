@@ -1,13 +1,32 @@
 {
-  "name": "better-auth-multi-tenancy-rbac",
-  "version": "0.1.0",
-  "description": "RBAC plugin for Better Auth multi-tenancy",
+  "name": "@four-leaves/better-auth-multi-tenancy-rbac",
+  "version": "1.0.0",
+  "description": "A role-based access control plugin for Four Leaves' Better Auth multi-tenancy plugin",
   "license": "MIT",
   "author": "Manuel Federl",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/manuelfederl/better-auth-multi-tenancy-rbac.git"
+  },
+  "bugs": {
+    "url": "https://github.com/manuelfederl/better-auth-multi-tenancy-rbac/issues"
+  },
+  "homepage": "https://github.com/manuelfederl/better-auth-multi-tenancy-rbac#readme",
+  "keywords": [
+    "four-leaves",
+    "better-auth",
+    "plugin",
+    "multi-tenancy",
+    "rbac",
+    "typescript"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,21 +39,22 @@
       "require": "./dist/client.cjs"
     }
   },
-  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "zod": "^3.24.0"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "peerDependencies": {
-    "better-auth": "^1.0.0"
+    "better-auth": "^1.0.0",
+    "zod": "^3.0.0"
   },
   "devDependencies": {
     "better-auth": "^1.2.7",
     "tsup": "^8.4.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.0",
+    "zod": "^3.24.0"
   }
 }

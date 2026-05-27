@@ -1,12 +1,9 @@
+import { APIError } from 'better-auth/api'
 import type { Permission } from '../types/permission'
+import type { TenantMember } from '../types/tenant-member'
 import type { TenantMemberRole } from '../types/tenant-member-role'
 import type { TenantRolePermission } from '../types/tenant-role-permission'
-
-interface TenantMember {
-  id: string
-  tenantId: string
-  userId: string
-}
+import type { PermissionRef } from '../types/options'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getUserPermissions(ctx: any, tenantId: string, userId: string): Promise<Set<string>> {
@@ -57,6 +54,92 @@ async function getUserPermissions(ctx: any, tenantId: string, userId: string): P
     if (p) names.add(p.name)
   }
   return names
+}
+
+/**
+ * Looks up a permission by (resource, action) and verifies the user holds it in
+ * the given tenant. Throws FORBIDDEN if the permission is not defined or if the
+ * user does not have it. Used when a developer configures a custom authorization
+ * override in RbacOptions.authorization.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function requireCustomPermission(
+  ctx: any,
+  tenantId: string,
+  userId: string,
+  ref: PermissionRef,
+): Promise<void> {
+  const matches = (await ctx.context.adapter.findMany({
+    model: 'permission',
+    where: [
+      { field: 'resource', value: ref.resource },
+      { field: 'action', value: ref.action },
+    ],
+  })) as Permission[]
+
+  const perm = matches[0]
+  if (!perm) {
+    throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
+  }
+
+  const allowed = await hasPermission(ctx, tenantId, userId, perm.name)
+  if (!allowed) {
+    throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
+  }
+}
+
+/**
+ * Cross-tenant permission check for global operations (e.g. permission CRUD).
+ * Scans every tenant the user belongs to and returns as soon as any of their
+ * role assignments grants the permission referenced by `ref`.
+ *
+ * Throws FORBIDDEN if the permission record does not exist or the user does not
+ * hold it in any tenant.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function requireGlobalPermission(
+  ctx: any,
+  userId: string,
+  ref: PermissionRef,
+): Promise<void> {
+  const matches = (await ctx.context.adapter.findMany({
+    model: 'permission',
+    where: [
+      { field: 'resource', value: ref.resource },
+      { field: 'action', value: ref.action },
+    ],
+  })) as Permission[]
+
+  const perm = matches[0]
+  if (!perm) {
+    throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
+  }
+
+  const memberships = (await ctx.context.adapter.findMany({
+    model: 'tenantMember',
+    where: [{ field: 'userId', value: userId }],
+  })) as TenantMember[]
+
+  for (const membership of memberships) {
+    const assignments = (await ctx.context.adapter.findMany({
+      model: 'tenantMemberRole',
+      where: [{ field: 'tenantMemberId', value: membership.id }],
+    })) as TenantMemberRole[]
+
+    for (const assignment of assignments) {
+      const rolePerms = (await ctx.context.adapter.findMany({
+        model: 'tenantRolePermission',
+        where: [
+          { field: 'tenantRoleId', value: assignment.tenantRoleId },
+          { field: 'permissionId', value: perm.id },
+        ],
+      })) as TenantRolePermission[]
+
+      if (rolePerms.length > 0) return
+    }
+  }
+
+  throw new APIError('FORBIDDEN', { message: 'Insufficient permissions.' })
 }
 
 /**

@@ -1,28 +1,28 @@
 export const tenantRoleSchema = {
   fields: {
     name: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
     },
     description: {
-      type: 'string' as const,
+      type: 'string',
       required: false,
     },
     tenantId: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
       references: {
         model: 'tenant',
         field: 'id',
-        onDelete: 'cascade' as const,
+        onDelete: 'cascade',
       },
     },
     createdAt: {
-      type: 'date' as const,
+      type: 'date',
       required: true,
     },
     updatedAt: {
-      type: 'date' as const,
+      type: 'date',
       required: true,
     },
   },

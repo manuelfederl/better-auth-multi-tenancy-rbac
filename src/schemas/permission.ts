@@ -1,28 +1,28 @@
 export const permissionSchema = {
   fields: {
     name: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
       unique: true,
     },
     description: {
-      type: 'string' as const,
+      type: 'string',
       required: false,
     },
     resource: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
     },
     action: {
-      type: 'string' as const,
+      type: 'string',
       required: true,
     },
     createdAt: {
-      type: 'date' as const,
+      type: 'date',
       required: true,
     },
     updatedAt: {
-      type: 'date' as const,
+      type: 'date',
       required: true,
     },
   },

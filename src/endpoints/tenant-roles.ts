@@ -3,20 +3,16 @@ import { APIError } from 'better-auth/api'
 import { z } from 'zod'
 
 import type { Permission } from '../types/permission'
+import type { TenantMember } from '../types/tenant-member'
 import type { TenantRole } from '../types/tenant-role'
 import type { TenantRolePermission } from '../types/tenant-role-permission'
 import type { TenantMemberRole } from '../types/tenant-member-role'
 import type { RbacOptions } from '../types/options'
+import { requireCustomPermission } from '../utils/permissions'
 
 interface Tenant {
   id: string
   ownerId: string | null
-}
-
-interface TenantMember {
-  id: string
-  tenantId: string
-  userId: string
 }
 
 /**
@@ -105,7 +101,12 @@ export const createTenantRole = (options: RbacOptions) =>
       const { tenantId } = ctx.params
       const { name, description, permissionIds } = ctx.body
 
-      await requireTenantOwner(ctx, tenantId, user.id)
+      const manageRef = options.authorization?.tenantRoles?.manage
+      if (manageRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, manageRef)
+      } else {
+        await requireTenantOwner(ctx, tenantId, user.id)
+      }
 
       const existingRoles = await ctx.context.adapter.findMany<TenantRole>({
         model: 'tenantRole',
@@ -180,7 +181,7 @@ export const createTenantRole = (options: RbacOptions) =>
  * **Errors**
  * - `FORBIDDEN` – caller is not a member of this tenant.
  */
-export const listTenantRoles = () =>
+export const listTenantRoles = (options: RbacOptions) =>
   createAuthEndpoint(
     '/rbac/tenants/:tenantId/roles',
     {
@@ -191,7 +192,12 @@ export const listTenantRoles = () =>
       const { user } = ctx.context.session
       const { tenantId } = ctx.params
 
-      await requireTenantMember(ctx, tenantId, user.id)
+      const viewRef = options.authorization?.tenantRoles?.view
+      if (viewRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, viewRef)
+      } else {
+        await requireTenantMember(ctx, tenantId, user.id)
+      }
 
       const roles = await ctx.context.adapter.findMany<TenantRole>({
         model: 'tenantRole',
@@ -212,7 +218,7 @@ export const listTenantRoles = () =>
  * - `FORBIDDEN`  – caller is not a member of this tenant.
  * - `NOT_FOUND`  – role does not exist in this tenant.
  */
-export const getTenantRole = () =>
+export const getTenantRole = (options: RbacOptions) =>
   createAuthEndpoint(
     '/rbac/tenants/:tenantId/roles/:roleId',
     {
@@ -223,7 +229,12 @@ export const getTenantRole = () =>
       const { user } = ctx.context.session
       const { tenantId, roleId } = ctx.params
 
-      await requireTenantMember(ctx, tenantId, user.id)
+      const viewRef = options.authorization?.tenantRoles?.view
+      if (viewRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, viewRef)
+      } else {
+        await requireTenantMember(ctx, tenantId, user.id)
+      }
 
       const role = await ctx.context.adapter.findOne<TenantRole>({
         model: 'tenantRole',
@@ -280,7 +291,12 @@ export const updateTenantRole = (options: RbacOptions) =>
       const { tenantId, roleId } = ctx.params
       const { name, description, permissionIds } = ctx.body
 
-      await requireTenantOwner(ctx, tenantId, user.id)
+      const manageRef = options.authorization?.tenantRoles?.manage
+      if (manageRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, manageRef)
+      } else {
+        await requireTenantOwner(ctx, tenantId, user.id)
+      }
 
       const role = await ctx.context.adapter.findOne<TenantRole>({
         model: 'tenantRole',
@@ -402,7 +418,12 @@ export const deleteTenantRole = (options: RbacOptions) =>
       const { user } = ctx.context.session
       const { tenantId, roleId } = ctx.params
 
-      await requireTenantOwner(ctx, tenantId, user.id)
+      const manageRef = options.authorization?.tenantRoles?.manage
+      if (manageRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, manageRef)
+      } else {
+        await requireTenantOwner(ctx, tenantId, user.id)
+      }
 
       const role = await ctx.context.adapter.findOne<TenantRole>({
         model: 'tenantRole',

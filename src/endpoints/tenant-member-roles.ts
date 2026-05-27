@@ -2,16 +2,12 @@ import { createAuthEndpoint, sessionMiddleware } from 'better-auth/api'
 import { APIError } from 'better-auth/api'
 import { z } from 'zod'
 
+import type { TenantMember } from '../types/tenant-member'
 import type { TenantRole } from '../types/tenant-role'
 import type { TenantMemberRole } from '../types/tenant-member-role'
 import type { RbacOptions } from '../types/options'
 import { requireTenantMember, requireTenantOwner } from './tenant-roles'
-
-interface TenantMember {
-  id: string
-  tenantId: string
-  userId: string
-}
+import { requireCustomPermission } from '../utils/permissions'
 
 /**
  * `POST /rbac/tenants/:tenantId/members/:memberId/roles`
@@ -44,7 +40,12 @@ export const assignRole = (options: RbacOptions) =>
       const { tenantId, memberId } = ctx.params
       const { tenantRoleId } = ctx.body
 
-      await requireTenantOwner(ctx, tenantId, user.id)
+      const manageRef = options.authorization?.tenantMemberRoles?.manage
+      if (manageRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, manageRef)
+      } else {
+        await requireTenantOwner(ctx, tenantId, user.id)
+      }
 
       const member = await ctx.context.adapter.findOne<TenantMember>({
         model: 'tenantMember',
@@ -104,7 +105,7 @@ export const assignRole = (options: RbacOptions) =>
  * - `FORBIDDEN` – caller is not a member of this tenant.
  * - `NOT_FOUND` – member not found in this tenant.
  */
-export const listMemberRoles = () =>
+export const listMemberRoles = (options: RbacOptions) =>
   createAuthEndpoint(
     '/rbac/tenants/:tenantId/members/:memberId/roles',
     {
@@ -115,7 +116,12 @@ export const listMemberRoles = () =>
       const { user } = ctx.context.session
       const { tenantId, memberId } = ctx.params
 
-      await requireTenantMember(ctx, tenantId, user.id)
+      const viewRef = options.authorization?.tenantMemberRoles?.view
+      if (viewRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, viewRef)
+      } else {
+        await requireTenantMember(ctx, tenantId, user.id)
+      }
 
       const member = await ctx.context.adapter.findOne<TenantMember>({
         model: 'tenantMember',
@@ -157,7 +163,12 @@ export const removeRole = (options: RbacOptions) =>
       const { user } = ctx.context.session
       const { tenantId, memberId, assignmentId } = ctx.params
 
-      await requireTenantOwner(ctx, tenantId, user.id)
+      const manageRef = options.authorization?.tenantMemberRoles?.manage
+      if (manageRef) {
+        await requireCustomPermission(ctx, tenantId, user.id, manageRef)
+      } else {
+        await requireTenantOwner(ctx, tenantId, user.id)
+      }
 
       const assignment = await ctx.context.adapter.findOne<TenantMemberRole>({
         model: 'tenantMemberRole',

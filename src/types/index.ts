@@ -1,5 +1,6 @@
 export type { Permission } from './permission'
+export type { TenantMember } from './tenant-member'
 export type { TenantRole } from './tenant-role'
 export type { TenantRolePermission } from './tenant-role-permission'
 export type { TenantMemberRole } from './tenant-member-role'
-export type { RbacOptions } from './options'
+export type { RbacOptions, PermissionRef } from './options'
