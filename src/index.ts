@@ -16,8 +16,10 @@ export {
 
 export type {
   Permission,
+  TenantMember,
   TenantRole,
   TenantRolePermission,
   TenantMemberRole,
   RbacOptions,
+  PermissionRef,
 } from './types/index'

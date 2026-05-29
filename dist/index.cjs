@@ -133,14 +133,111 @@ var tenantMemberRoleSchema = {
     }
   }
 };
+async function getUserPermissions(ctx, tenantId, userId) {
+  const member = await ctx.context.adapter.findOne({
+    model: "tenantMember",
+    where: [
+      { field: "tenantId", value: tenantId },
+      { field: "userId", value: userId }
+    ]
+  });
+  if (!member) return /* @__PURE__ */ new Set();
+  const assignments = await ctx.context.adapter.findMany({
+    model: "tenantMemberRole",
+    where: [{ field: "tenantMemberId", value: member.id }]
+  });
+  if (assignments.length === 0) return /* @__PURE__ */ new Set();
+  const rolePermissionSets = await Promise.all(
+    assignments.map(
+      (a) => ctx.context.adapter.findMany({
+        model: "tenantRolePermission",
+        where: [{ field: "tenantRoleId", value: a.tenantRoleId }]
+      })
+    )
+  );
+  const permissionIds = [
+    ...new Set(rolePermissionSets.flat().map((rp) => rp.permissionId))
+  ];
+  if (permissionIds.length === 0) return /* @__PURE__ */ new Set();
+  const permissions = await Promise.all(
+    permissionIds.map(
+      (id) => ctx.context.adapter.findOne({
+        model: "permission",
+        where: [{ field: "id", value: id }]
+      })
+    )
+  );
+  const names = /* @__PURE__ */ new Set();
+  for (const p of permissions) {
+    if (p) names.add(p.name);
+  }
+  return names;
+}
+async function requireCustomPermission(ctx, tenantId, userId, ref) {
+  const matches = await ctx.context.adapter.findMany({
+    model: "permission",
+    where: [
+      { field: "resource", value: ref.resource },
+      { field: "action", value: ref.action }
+    ]
+  });
+  const perm = matches[0];
+  if (!perm) {
+    throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+  }
+  const allowed = await hasPermission(ctx, tenantId, userId, perm.name);
+  if (!allowed) {
+    throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+  }
+}
+async function requireGlobalPermission(ctx, userId, ref) {
+  const matches = await ctx.context.adapter.findMany({
+    model: "permission",
+    where: [
+      { field: "resource", value: ref.resource },
+      { field: "action", value: ref.action }
+    ]
+  });
+  const perm = matches[0];
+  if (!perm) {
+    throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+  }
+  const memberships = await ctx.context.adapter.findMany({
+    model: "tenantMember",
+    where: [{ field: "userId", value: userId }]
+  });
+  for (const membership of memberships) {
+    const assignments = await ctx.context.adapter.findMany({
+      model: "tenantMemberRole",
+      where: [{ field: "tenantMemberId", value: membership.id }]
+    });
+    for (const assignment of assignments) {
+      const rolePerms = await ctx.context.adapter.findMany({
+        model: "tenantRolePermission",
+        where: [
+          { field: "tenantRoleId", value: assignment.tenantRoleId },
+          { field: "permissionId", value: perm.id }
+        ]
+      });
+      if (rolePerms.length > 0) return;
+    }
+  }
+  throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+}
+async function hasPermission(ctx, tenantId, userId, permission) {
+  const perms = await getUserPermissions(ctx, tenantId, userId);
+  return perms.has(permission);
+}
+async function hasAnyOnePermission(ctx, tenantId, userId, permissions) {
+  const perms = await getUserPermissions(ctx, tenantId, userId);
+  return permissions.some((p) => perms.has(p));
+}
+async function hasAllPermissions(ctx, tenantId, userId, permissions) {
+  const perms = await getUserPermissions(ctx, tenantId, userId);
+  return permissions.every((p) => perms.has(p));
+}
 
-// src/schemas/index.ts
-var rbacSchema = {
-  permission: permissionSchema,
-  tenantRole: tenantRoleSchema,
-  tenantRolePermission: tenantRolePermissionSchema,
-  tenantMemberRole: tenantMemberRoleSchema
-};
+// src/endpoints/permissions.ts
 var createPermission = (options) => api.createAuthEndpoint(
   "/rbac/permissions",
   {
@@ -154,6 +251,12 @@ var createPermission = (options) => api.createAuthEndpoint(
     })
   },
   async (ctx) => {
+    const { user } = ctx.context.session;
+    const createRef = options.authorization?.permissions?.create;
+    if (!createRef) {
+      throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+    }
+    await requireGlobalPermission(ctx, user.id, createRef);
     const { name, resource, action, description } = ctx.body;
     const existingByName = await ctx.context.adapter.findOne({
       model: "permission",
@@ -200,8 +303,7 @@ var listPermissions = () => api.createAuthEndpoint(
   },
   async (ctx) => {
     const permissions = await ctx.context.adapter.findMany({
-      model: "permission",
-      where: []
+      model: "permission"
     });
     return ctx.json({ permissions });
   }
@@ -237,6 +339,12 @@ var updatePermission = (options) => api.createAuthEndpoint(
     })
   },
   async (ctx) => {
+    const { user } = ctx.context.session;
+    const updateRef = options.authorization?.permissions?.update;
+    if (!updateRef) {
+      throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+    }
+    await requireGlobalPermission(ctx, user.id, updateRef);
     const { permissionId } = ctx.params;
     const { name, resource, action, description } = ctx.body;
     const existing = await ctx.context.adapter.findOne({
@@ -299,6 +407,12 @@ var deletePermission = (options) => api.createAuthEndpoint(
     use: [api.sessionMiddleware]
   },
   async (ctx) => {
+    const { user } = ctx.context.session;
+    const deleteRef = options.authorization?.permissions?.delete;
+    if (!deleteRef) {
+      throw new api.APIError("FORBIDDEN", { message: "Insufficient permissions." });
+    }
+    await requireGlobalPermission(ctx, user.id, deleteRef);
     const { permissionId } = ctx.params;
     const permission = await ctx.context.adapter.findOne({
       model: "permission",
@@ -372,7 +486,12 @@ var createTenantRole = (options) => api.createAuthEndpoint(
     const { user } = ctx.context.session;
     const { tenantId } = ctx.params;
     const { name, description, permissionIds } = ctx.body;
-    await requireTenantOwner(ctx, tenantId, user.id);
+    const manageRef = options.authorization?.tenantRoles?.manage;
+    if (manageRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, manageRef);
+    } else {
+      await requireTenantOwner(ctx, tenantId, user.id);
+    }
     const existingRoles = await ctx.context.adapter.findMany({
       model: "tenantRole",
       where: [
@@ -431,7 +550,7 @@ var createTenantRole = (options) => api.createAuthEndpoint(
     return ctx.json({ role, permissionIds: assignedPermissionIds });
   }
 );
-var listTenantRoles = () => api.createAuthEndpoint(
+var listTenantRoles = (options) => api.createAuthEndpoint(
   "/rbac/tenants/:tenantId/roles",
   {
     method: "GET",
@@ -440,7 +559,12 @@ var listTenantRoles = () => api.createAuthEndpoint(
   async (ctx) => {
     const { user } = ctx.context.session;
     const { tenantId } = ctx.params;
-    await requireTenantMember(ctx, tenantId, user.id);
+    const viewRef = options.authorization?.tenantRoles?.view;
+    if (viewRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, viewRef);
+    } else {
+      await requireTenantMember(ctx, tenantId, user.id);
+    }
     const roles = await ctx.context.adapter.findMany({
       model: "tenantRole",
       where: [{ field: "tenantId", value: tenantId }]
@@ -448,7 +572,7 @@ var listTenantRoles = () => api.createAuthEndpoint(
     return ctx.json({ roles });
   }
 );
-var getTenantRole = () => api.createAuthEndpoint(
+var getTenantRole = (options) => api.createAuthEndpoint(
   "/rbac/tenants/:tenantId/roles/:roleId",
   {
     method: "GET",
@@ -457,7 +581,12 @@ var getTenantRole = () => api.createAuthEndpoint(
   async (ctx) => {
     const { user } = ctx.context.session;
     const { tenantId, roleId } = ctx.params;
-    await requireTenantMember(ctx, tenantId, user.id);
+    const viewRef = options.authorization?.tenantRoles?.view;
+    if (viewRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, viewRef);
+    } else {
+      await requireTenantMember(ctx, tenantId, user.id);
+    }
     const role = await ctx.context.adapter.findOne({
       model: "tenantRole",
       where: [{ field: "id", value: roleId }]
@@ -490,7 +619,12 @@ var updateTenantRole = (options) => api.createAuthEndpoint(
     const { user } = ctx.context.session;
     const { tenantId, roleId } = ctx.params;
     const { name, description, permissionIds } = ctx.body;
-    await requireTenantOwner(ctx, tenantId, user.id);
+    const manageRef = options.authorization?.tenantRoles?.manage;
+    if (manageRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, manageRef);
+    } else {
+      await requireTenantOwner(ctx, tenantId, user.id);
+    }
     const role = await ctx.context.adapter.findOne({
       model: "tenantRole",
       where: [{ field: "id", value: roleId }]
@@ -586,7 +720,12 @@ var deleteTenantRole = (options) => api.createAuthEndpoint(
   async (ctx) => {
     const { user } = ctx.context.session;
     const { tenantId, roleId } = ctx.params;
-    await requireTenantOwner(ctx, tenantId, user.id);
+    const manageRef = options.authorization?.tenantRoles?.manage;
+    if (manageRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, manageRef);
+    } else {
+      await requireTenantOwner(ctx, tenantId, user.id);
+    }
     const role = await ctx.context.adapter.findOne({
       model: "tenantRole",
       where: [{ field: "id", value: roleId }]
@@ -639,7 +778,12 @@ var assignRole = (options) => api.createAuthEndpoint(
     const { user } = ctx.context.session;
     const { tenantId, memberId } = ctx.params;
     const { tenantRoleId } = ctx.body;
-    await requireTenantOwner(ctx, tenantId, user.id);
+    const manageRef = options.authorization?.tenantMemberRoles?.manage;
+    if (manageRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, manageRef);
+    } else {
+      await requireTenantOwner(ctx, tenantId, user.id);
+    }
     const member = await ctx.context.adapter.findOne({
       model: "tenantMember",
       where: [{ field: "id", value: memberId }]
@@ -683,7 +827,7 @@ var assignRole = (options) => api.createAuthEndpoint(
     return ctx.json({ assignment });
   }
 );
-var listMemberRoles = () => api.createAuthEndpoint(
+var listMemberRoles = (options) => api.createAuthEndpoint(
   "/rbac/tenants/:tenantId/members/:memberId/roles",
   {
     method: "GET",
@@ -692,7 +836,12 @@ var listMemberRoles = () => api.createAuthEndpoint(
   async (ctx) => {
     const { user } = ctx.context.session;
     const { tenantId, memberId } = ctx.params;
-    await requireTenantMember(ctx, tenantId, user.id);
+    const viewRef = options.authorization?.tenantMemberRoles?.view;
+    if (viewRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, viewRef);
+    } else {
+      await requireTenantMember(ctx, tenantId, user.id);
+    }
     const member = await ctx.context.adapter.findOne({
       model: "tenantMember",
       where: [{ field: "id", value: memberId }]
@@ -716,7 +865,12 @@ var removeRole = (options) => api.createAuthEndpoint(
   async (ctx) => {
     const { user } = ctx.context.session;
     const { tenantId, memberId, assignmentId } = ctx.params;
-    await requireTenantOwner(ctx, tenantId, user.id);
+    const manageRef = options.authorization?.tenantMemberRoles?.manage;
+    if (manageRef) {
+      await requireCustomPermission(ctx, tenantId, user.id, manageRef);
+    } else {
+      await requireTenantOwner(ctx, tenantId, user.id);
+    }
     const assignment = await ctx.context.adapter.findOne({
       model: "tenantMemberRole",
       where: [{ field: "id", value: assignmentId }]
@@ -732,77 +886,20 @@ var removeRole = (options) => api.createAuthEndpoint(
     return ctx.json({ success: true });
   }
 );
-
-// src/utils/permissions.ts
-async function getUserPermissions(ctx, tenantId, userId) {
-  const member = await ctx.context.adapter.findOne({
-    model: "tenantMember",
-    where: [
-      { field: "tenantId", value: tenantId },
-      { field: "userId", value: userId }
-    ]
-  });
-  if (!member) return /* @__PURE__ */ new Set();
-  const assignments = await ctx.context.adapter.findMany({
-    model: "tenantMemberRole",
-    where: [{ field: "tenantMemberId", value: member.id }]
-  });
-  if (assignments.length === 0) return /* @__PURE__ */ new Set();
-  const rolePermissionSets = await Promise.all(
-    assignments.map(
-      (a) => ctx.context.adapter.findMany({
-        model: "tenantRolePermission",
-        where: [{ field: "tenantRoleId", value: a.tenantRoleId }]
-      })
-    )
-  );
-  const permissionIds = [
-    ...new Set(rolePermissionSets.flat().map((rp) => rp.permissionId))
-  ];
-  if (permissionIds.length === 0) return /* @__PURE__ */ new Set();
-  const permissions = await Promise.all(
-    permissionIds.map(
-      (id) => ctx.context.adapter.findOne({
-        model: "permission",
-        where: [{ field: "id", value: id }]
-      })
-    )
-  );
-  const names = /* @__PURE__ */ new Set();
-  for (const p of permissions) {
-    if (p) names.add(p.name);
-  }
-  return names;
-}
-async function hasPermission(ctx, tenantId, userId, permission) {
-  const perms = await getUserPermissions(ctx, tenantId, userId);
-  return perms.has(permission);
-}
-async function hasAnyOnePermission(ctx, tenantId, userId, permissions) {
-  const perms = await getUserPermissions(ctx, tenantId, userId);
-  return permissions.some((p) => perms.has(p));
-}
-async function hasAllPermissions(ctx, tenantId, userId, permissions) {
-  const perms = await getUserPermissions(ctx, tenantId, userId);
-  return permissions.every((p) => perms.has(p));
-}
-
-// src/endpoints/permission-checks.ts
 var checkPermission = () => api.createAuthEndpoint(
   "/rbac/tenants/:tenantId/permissions/check",
   {
     method: "POST",
     use: [api.sessionMiddleware],
     body: zod.z.object({
-      permission: zod.z.string().min(1),
-      userId: zod.z.string().optional()
+      permission: zod.z.string().min(1)
     })
   },
   async (ctx) => {
     const { tenantId } = ctx.params;
-    const { permission, userId } = ctx.body;
-    const targetUserId = userId ?? ctx.context.session.user.id;
-    const result = await hasPermission(ctx, tenantId, targetUserId, permission);
+    const { permission } = ctx.body;
+    const { user } = ctx.context.session;
+    const result = await hasPermission(ctx, tenantId, user.id, permission);
     return ctx.json({ result });
   }
 );
@@ -812,15 +909,14 @@ var checkAnyPermission = () => api.createAuthEndpoint(
     method: "POST",
     use: [api.sessionMiddleware],
     body: zod.z.object({
-      permissions: zod.z.array(zod.z.string().min(1)).min(1),
-      userId: zod.z.string().optional()
+      permissions: zod.z.array(zod.z.string().min(1)).min(1)
     })
   },
   async (ctx) => {
     const { tenantId } = ctx.params;
-    const { permissions, userId } = ctx.body;
-    const targetUserId = userId ?? ctx.context.session.user.id;
-    const result = await hasAnyOnePermission(ctx, tenantId, targetUserId, permissions);
+    const { permissions } = ctx.body;
+    const { user } = ctx.context.session;
+    const result = await hasAnyOnePermission(ctx, tenantId, user.id, permissions);
     return ctx.json({ result });
   }
 );
@@ -830,24 +926,42 @@ var checkAllPermissions = () => api.createAuthEndpoint(
     method: "POST",
     use: [api.sessionMiddleware],
     body: zod.z.object({
-      permissions: zod.z.array(zod.z.string().min(1)).min(1),
-      userId: zod.z.string().optional()
+      permissions: zod.z.array(zod.z.string().min(1)).min(1)
     })
   },
   async (ctx) => {
     const { tenantId } = ctx.params;
-    const { permissions, userId } = ctx.body;
-    const targetUserId = userId ?? ctx.context.session.user.id;
-    const result = await hasAllPermissions(ctx, tenantId, targetUserId, permissions);
+    const { permissions } = ctx.body;
+    const { user } = ctx.context.session;
+    const result = await hasAllPermissions(ctx, tenantId, user.id, permissions);
     return ctx.json({ result });
   }
 );
 
 // src/plugin.ts
 var rbac = (options = {}) => {
+  const s = options.schema;
+  const schema = {
+    permission: {
+      ...s?.permission?.modelName !== void 0 && { modelName: s.permission.modelName },
+      fields: permissionSchema.fields
+    },
+    tenantRole: {
+      ...s?.tenantRole?.modelName !== void 0 && { modelName: s.tenantRole.modelName },
+      fields: tenantRoleSchema.fields
+    },
+    tenantRolePermission: {
+      ...s?.tenantRolePermission?.modelName !== void 0 && { modelName: s.tenantRolePermission.modelName },
+      fields: tenantRolePermissionSchema.fields
+    },
+    tenantMemberRole: {
+      ...s?.tenantMemberRole?.modelName !== void 0 && { modelName: s.tenantMemberRole.modelName },
+      fields: tenantMemberRoleSchema.fields
+    }
+  };
   return {
     id: "rbac",
-    schema: rbacSchema,
+    schema,
     endpoints: {
       // Global permissions
       createPermission: createPermission(options),
@@ -857,13 +971,13 @@ var rbac = (options = {}) => {
       deletePermission: deletePermission(options),
       // Tenant roles
       createTenantRole: createTenantRole(options),
-      listTenantRoles: listTenantRoles(),
-      getTenantRole: getTenantRole(),
+      listTenantRoles: listTenantRoles(options),
+      getTenantRole: getTenantRole(options),
       updateTenantRole: updateTenantRole(options),
       deleteTenantRole: deleteTenantRole(options),
       // Member role assignments
       assignRole: assignRole(options),
-      listMemberRoles: listMemberRoles(),
+      listMemberRoles: listMemberRoles(options),
       removeRole: removeRole(options),
       // Client-side permission checks
       checkPermission: checkPermission(),

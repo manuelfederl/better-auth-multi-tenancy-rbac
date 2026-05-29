@@ -1,7 +1,7 @@
 {
   "name": "@four-leaves/better-auth-multi-tenancy-rbac",
   "version": "1.0.0",
-  "description": "A role-based access control plugin for Four Leaves' Better Auth multi-tenancy plugin",
+  "description": "A role-based access control plugin for a Better Auth multi-tenancy plugin",
   "license": "MIT",
   "author": "Manuel Federl",
   "repository": {
@@ -44,17 +44,16 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
-  "peerDependencies": {
-    "better-auth": "^1.0.0",
-    "zod": "^3.0.0"
+  "dependencies": {
+    "better-auth": "^1.6.11",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "better-auth": "^1.2.7",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.0.0",
-    "zod": "^3.24.0"
+    "vitest": "^3.0.0"
   }
 }

@@ -1,3 +1,4 @@
+import * as zod_v4_core from 'zod/v4/core';
 import * as zod from 'zod';
 import * as better_auth from 'better-auth';
 
@@ -9,6 +10,12 @@ interface Permission {
     action: string;
     createdAt: Date;
     updatedAt: Date;
+}
+
+interface TenantMember {
+    id: string;
+    tenantId: string;
+    userId: string;
 }
 
 interface TenantRole {
@@ -36,7 +43,59 @@ interface TenantMemberRole {
     updatedAt: Date;
 }
 
+interface PermissionRef {
+    resource: string;
+    action: string;
+}
 interface RbacOptions {
+    schema?: {
+        permission?: {
+            modelName?: string;
+        };
+        tenantRole?: {
+            modelName?: string;
+        };
+        tenantRolePermission?: {
+            modelName?: string;
+        };
+        tenantMemberRole?: {
+            modelName?: string;
+        };
+    };
+    /**
+     * Override the default owner/member authorization checks for tenant-scoped
+     * endpoints with a RBAC permission lookup. When set, the system finds the
+     * permission matching the given (resource, action) pair and verifies the
+     * calling user holds it in the tenant. Falls back to the built-in owner or
+     * member check when omitted.
+     */
+    authorization?: {
+        /**
+         * Guards the global permission write endpoints (createPermission, updatePermission,
+         * deletePermission). When omitted these endpoints are **disabled** and return
+         * FORBIDDEN — permissions must be seeded via the database instead.
+         */
+        permissions?: {
+            /** Required to call createPermission. */
+            create?: PermissionRef;
+            /** Required to call updatePermission. */
+            update?: PermissionRef;
+            /** Required to call deletePermission. */
+            delete?: PermissionRef;
+        };
+        tenantRoles?: {
+            /** Guards listTenantRoles and getTenantRole. Default: tenant membership. */
+            view?: PermissionRef;
+            /** Guards createTenantRole, updateTenantRole, deleteTenantRole. Default: tenant ownership. */
+            manage?: PermissionRef;
+        };
+        tenantMemberRoles?: {
+            /** Guards listMemberRoles. Default: tenant membership. */
+            view?: PermissionRef;
+            /** Guards assignRole and removeRole. Default: tenant ownership. */
+            manage?: PermissionRef;
+        };
+    };
     onPermissionCreated?: (permission: Permission) => Promise<void> | void;
     onPermissionUpdated?: (permission: Permission) => Promise<void> | void;
     onPermissionDeleted?: (permission: Permission) => Promise<void> | void;
@@ -69,6 +128,10 @@ interface RbacOptions {
  *   plugins: [
  *     multiTenancy(),
  *     rbac({
+ *       schema: {
+ *         permission: { modelName: "rbac_permission" },
+ *         tenantRole: { modelName: "rbac_tenant_role" },
+ *       },
  *       onPermissionCreated: async (permission) => {
  *         console.log(`Permission "${permission.name}" created`);
  *       },
@@ -86,8 +149,8 @@ interface RbacOptions {
 declare const rbac: (options?: RbacOptions) => {
     id: "rbac";
     schema: {
-        readonly permission: {
-            readonly fields: {
+        permission: {
+            fields: {
                 readonly name: {
                     readonly type: "string";
                     readonly required: true;
@@ -114,9 +177,10 @@ declare const rbac: (options?: RbacOptions) => {
                     readonly required: true;
                 };
             };
+            modelName?: string;
         };
-        readonly tenantRole: {
-            readonly fields: {
+        tenantRole: {
+            fields: {
                 readonly name: {
                     readonly type: "string";
                     readonly required: true;
@@ -143,9 +207,10 @@ declare const rbac: (options?: RbacOptions) => {
                     readonly required: true;
                 };
             };
+            modelName?: string;
         };
-        readonly tenantRolePermission: {
-            readonly fields: {
+        tenantRolePermission: {
+            fields: {
                 readonly tenantRoleId: {
                     readonly type: "string";
                     readonly required: true;
@@ -169,9 +234,10 @@ declare const rbac: (options?: RbacOptions) => {
                     readonly required: true;
                 };
             };
+            modelName?: string;
         };
-        readonly tenantMemberRole: {
-            readonly fields: {
+        tenantMemberRole: {
+            fields: {
                 readonly tenantId: {
                     readonly type: "string";
                     readonly required: true;
@@ -208,6 +274,7 @@ declare const rbac: (options?: RbacOptions) => {
                     readonly required: true;
                 };
             };
+            modelName?: string;
         };
     };
     endpoints: {
@@ -241,17 +308,7 @@ declare const rbac: (options?: RbacOptions) => {
                 resource: zod.ZodString;
                 action: zod.ZodString;
                 description: zod.ZodOptional<zod.ZodString>;
-            }, "strip", zod.ZodTypeAny, {
-                name: string;
-                resource: string;
-                action: string;
-                description?: string | undefined;
-            }, {
-                name: string;
-                resource: string;
-                action: string;
-                description?: string | undefined;
-            }>;
+            }, zod_v4_core.$strip>;
         }, {
             permission: Permission;
         }>;
@@ -341,17 +398,7 @@ declare const rbac: (options?: RbacOptions) => {
                 resource: zod.ZodOptional<zod.ZodString>;
                 action: zod.ZodOptional<zod.ZodString>;
                 description: zod.ZodOptional<zod.ZodString>;
-            }, "strip", zod.ZodTypeAny, {
-                name?: string | undefined;
-                resource?: string | undefined;
-                action?: string | undefined;
-                description?: string | undefined;
-            }, {
-                name?: string | undefined;
-                resource?: string | undefined;
-                action?: string | undefined;
-                description?: string | undefined;
-            }>;
+            }, zod_v4_core.$strip>;
         }, {
             permission: Permission | null;
         }>;
@@ -411,16 +458,8 @@ declare const rbac: (options?: RbacOptions) => {
             body: zod.ZodObject<{
                 name: zod.ZodString;
                 description: zod.ZodOptional<zod.ZodString>;
-                permissionIds: zod.ZodOptional<zod.ZodArray<zod.ZodString, "many">>;
-            }, "strip", zod.ZodTypeAny, {
-                name: string;
-                description?: string | undefined;
-                permissionIds?: string[] | undefined;
-            }, {
-                name: string;
-                description?: string | undefined;
-                permissionIds?: string[] | undefined;
-            }>;
+                permissionIds: zod.ZodOptional<zod.ZodArray<zod.ZodString>>;
+            }, zod_v4_core.$strip>;
         }, {
             role: TenantRole;
             permissionIds: string[];
@@ -510,16 +549,8 @@ declare const rbac: (options?: RbacOptions) => {
             body: zod.ZodObject<{
                 name: zod.ZodOptional<zod.ZodString>;
                 description: zod.ZodOptional<zod.ZodString>;
-                permissionIds: zod.ZodOptional<zod.ZodArray<zod.ZodString, "many">>;
-            }, "strip", zod.ZodTypeAny, {
-                name?: string | undefined;
-                description?: string | undefined;
-                permissionIds?: string[] | undefined;
-            }, {
-                name?: string | undefined;
-                description?: string | undefined;
-                permissionIds?: string[] | undefined;
-            }>;
+                permissionIds: zod.ZodOptional<zod.ZodArray<zod.ZodString>>;
+            }, zod_v4_core.$strip>;
         }, {
             role: TenantRole | null;
             permissionIds: string[];
@@ -579,11 +610,7 @@ declare const rbac: (options?: RbacOptions) => {
             }>)[];
             body: zod.ZodObject<{
                 tenantRoleId: zod.ZodString;
-            }, "strip", zod.ZodTypeAny, {
-                tenantRoleId: string;
-            }, {
-                tenantRoleId: string;
-            }>;
+            }, zod_v4_core.$strip>;
         }, {
             assignment: TenantMemberRole;
         }>;
@@ -670,14 +697,7 @@ declare const rbac: (options?: RbacOptions) => {
             }>)[];
             body: zod.ZodObject<{
                 permission: zod.ZodString;
-                userId: zod.ZodOptional<zod.ZodString>;
-            }, "strip", zod.ZodTypeAny, {
-                permission: string;
-                userId?: string | undefined;
-            }, {
-                permission: string;
-                userId?: string | undefined;
-            }>;
+            }, zod_v4_core.$strip>;
         }, {
             result: boolean;
         }>;
@@ -707,15 +727,8 @@ declare const rbac: (options?: RbacOptions) => {
                 };
             }>)[];
             body: zod.ZodObject<{
-                permissions: zod.ZodArray<zod.ZodString, "many">;
-                userId: zod.ZodOptional<zod.ZodString>;
-            }, "strip", zod.ZodTypeAny, {
-                permissions: string[];
-                userId?: string | undefined;
-            }, {
-                permissions: string[];
-                userId?: string | undefined;
-            }>;
+                permissions: zod.ZodArray<zod.ZodString>;
+            }, zod_v4_core.$strip>;
         }, {
             result: boolean;
         }>;
@@ -745,15 +758,8 @@ declare const rbac: (options?: RbacOptions) => {
                 };
             }>)[];
             body: zod.ZodObject<{
-                permissions: zod.ZodArray<zod.ZodString, "many">;
-                userId: zod.ZodOptional<zod.ZodString>;
-            }, "strip", zod.ZodTypeAny, {
-                permissions: string[];
-                userId?: string | undefined;
-            }, {
-                permissions: string[];
-                userId?: string | undefined;
-            }>;
+                permissions: zod.ZodArray<zod.ZodString>;
+            }, zod_v4_core.$strip>;
         }, {
             result: boolean;
         }>;
@@ -774,4 +780,4 @@ declare function hasAnyOnePermission(ctx: any, tenantId: string, userId: string,
  */
 declare function hasAllPermissions(ctx: any, tenantId: string, userId: string, permissions: string[]): Promise<boolean>;
 
-export { type Permission, type RbacOptions, type TenantMemberRole, type TenantRole, type TenantRolePermission, hasAllPermissions, hasAnyOnePermission, hasPermission, rbac };
+export { type Permission, type PermissionRef, type RbacOptions, type TenantMember, type TenantMemberRole, type TenantRole, type TenantRolePermission, hasAllPermissions, hasAnyOnePermission, hasPermission, rbac };
